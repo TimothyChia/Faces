@@ -12,16 +12,21 @@ import android.provider.MediaStore;
 import android.support.v4.content.FileProvider;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.text.method.ScrollingMovementMethod;
+import android.util.Base64;
 import android.view.View;
 import android.widget.EditText;
 import android.widget.ImageView;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import com.android.volley.AuthFailureError;
 import com.android.volley.NetworkResponse;
 import com.android.volley.Request;
+import com.android.volley.RequestQueue;
 import com.android.volley.Response;
 import com.android.volley.VolleyError;
+import com.android.volley.toolbox.JsonObjectRequest;
 import com.android.volley.toolbox.Volley;
 
 import org.json.JSONException;
@@ -38,6 +43,7 @@ import java.util.Map;
 public class MainActivity extends AppCompatActivity {
     public static final String EXTRA_MESSAGE = "com.example.myfirstapp.MESSAGE";
     private ImageView mImageView;
+    private TextView mTextView;
     static final int REQUEST_IMAGE_CAPTURE = 1;
 
     private String app_id_string = "a1731ed8";
@@ -49,6 +55,8 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
 
         mImageView = (ImageView) findViewById(R.id.imageView);
+        mTextView = (TextView) findViewById(R.id.textView2);
+        mTextView.setMovementMethod(new ScrollingMovementMethod());
 
         //adding click listener to button. Triggers the built in camera activity.
         findViewById(R.id.button_recognize).setOnClickListener(new View.OnClickListener() {
@@ -149,61 +157,64 @@ public class MainActivity extends AppCompatActivity {
 
     // modifying this to do a Kairos recognize API call
     private void uploadBitmap(final Bitmap bitmap) {
-        String url_recognize = "https://api.kairos.com/recognize";
+        String recognize_url = "https://api.kairos.com/recognize";
         final String gallery_name = "Office";
 
-        //our custom volley request
-        VolleyMultipartRequest volleyMultipartRequest = new VolleyMultipartRequest(Request.Method.POST, url_recognize,
-                new Response.Listener<NetworkResponse>() {
-                    @Override
-                    public void onResponse(NetworkResponse response) {
-                        try {
-                            JSONObject obj = new JSONObject(new String(response.data));
-                            // use toast to display the results
-                            Toast.makeText(getApplicationContext(), obj.toString(), Toast.LENGTH_SHORT).show();
-                        } catch (JSONException e) {
-                            e.printStackTrace();
-                        }
-                    }
-                },
-                new Response.ErrorListener() {
-                    @Override
-                    public void onErrorResponse(VolleyError error) {
-                        Toast.makeText(getApplicationContext(), error.getMessage(), Toast.LENGTH_SHORT).show();
-                    }
-                }) {
-            // now overriding methods in order to set parameters and header
+        // A more complicated queue instantiation may be needed to make this safe from even orientation changes
+        RequestQueue queue = Volley.newRequestQueue(this);
 
-            // the class does contain mHeaders, but this way should work fine.
+
+        // For some reason, the JSONObject.put method has to be wrapped in try/catch before android studio will take it
+        JSONObject recognize_param = new JSONObject();
+        try {
+            recognize_param.put("gallery_name","People");
+            recognize_param.put("threshold","0");
+            recognize_param.put("image",Base64.encodeToString(getFileDataFromDrawable(bitmap), Base64.DEFAULT) );
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+
+        JsonObjectRequest jReq = new JsonObjectRequest(Request.Method.POST, recognize_url,recognize_param,
+                new Response.Listener() {
+                    // online tutorial doesn't use "Object response", but android studio won't recognize it as an override otherwise
+                    public void onResponse(Object response) {
+                        // Display the first 500 characters of the response string.
+                        mTextView.setText(mCurrentPhotoPath +"Response is: "+ response.toString());
+                    }
+                }, new Response.ErrorListener() {
             @Override
+            public void onErrorResponse(
+                    /**
+                     * JsonObjectRequest takes in five paramaters
+                     * Request Type - This specifies the type of the request eg: GET,POST
+                     * URL          - This String param specifies the Request URL
+                     * JSONObject   - This parameter takes in the POST parameters."null" in
+                     *                  case of GET request.
+                     * Listener     -This parameter takes in a implementation of Response.Listener()
+                     *                 interface which is invoked if the request is successful
+                     * Listener     -This parameter takes in a implementation of Error.Listener()
+                     *               interface which is invoked if any error is encountered while processing
+                     *               the request
+                     **/VolleyError error) {
+                mTextView.setText(mCurrentPhotoPath +"That didn't work!");
+            }
+        }){
+
+            /** Passing some request headers* */
+            @Override
+            // online tutorial uses some strange syntax in the angular brackets. Changed it to this instead.
             public Map<String, String> getHeaders() throws AuthFailureError {
                 HashMap<String, String> headers = new HashMap<String, String>();
                 headers.put("Content-Type", "application/json");
-                headers.put("app_id",app_id_string);
-                headers.put("app_key", app_key_string);
+                headers.put("app_id","a1731ed8");
+                headers.put("app_key", "d3a579a339de2805b54e53dcd72ee40c");
                 return headers;
-            }
-
-            @Override
-            protected Map<String, String> getParams() throws AuthFailureError {
-                Map<String, String> params = new HashMap<>();
-                params.put("gallery_name", gallery_name);
-                return params;
-            }
-
-            /*
-             * Here we are passing image by renaming it with a unique name
-             * */
-            @Override
-            protected Map<String, DataPart> getByteData() {
-                Map<String, DataPart> params = new HashMap<>();
-                long imagename = System.currentTimeMillis();
-                params.put("pic", new DataPart(imagename + ".png", getFileDataFromDrawable(bitmap)));
-                return params;
             }
         };
 
-        //adding the request to volley
-        Volley.newRequestQueue(this).add(volleyMultipartRequest);
+// Add the request to the RequestQueue.
+        queue.add(jReq);
+
+
     }
 }
