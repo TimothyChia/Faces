@@ -14,6 +14,7 @@ import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.text.method.ScrollingMovementMethod;
 import android.util.Base64;
+import android.util.Log;
 import android.view.View;
 import android.widget.EditText;
 import android.widget.ImageView;
@@ -42,12 +43,27 @@ import java.util.Map;
 
 public class MainActivity extends AppCompatActivity {
     public static final String EXTRA_MESSAGE = "com.example.myfirstapp.MESSAGE";
+    private static final String LOG_TAG =  MainActivity.class.getSimpleName();
     private ImageView mImageView;
     private TextView mTextView;
+    private EditText mEditText_newID;
     static final int REQUEST_IMAGE_CAPTURE = 1;
 
-    private String app_id_string = "a1731ed8";
-    private String app_key_string = "d3a579a339de2805b54e53dcd72ee40c";
+    private String app_id = "a1731ed8";
+    private String app_key = "d3a579a339de2805b54e53dcd72ee40c";
+    final String gallery_name = "People";
+
+    final String  url_enroll = "https://api.kairos.com/enroll";
+    final String url_recognize = "https://api.kairos.com/recognize";
+    final String  url_gallery_list = "https://api.kairos.com/gallery/list_all";
+    final String  url_gallery_view = "https://api.kairos.com/gallery/view";
+    final String  url_view_subject = "https://api.kairos.com/gallery/view_subject";
+    final String  url_gallery_remove = "https://api.kairos.com/gallery/remove";
+    final String noPhoto = "No Photo";
+
+    private static RequestQueue mRequestQueue; // consider moving to an application class to share across activities?
+        // where it is right now, probably doesn't need to be static.
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -58,6 +74,8 @@ public class MainActivity extends AppCompatActivity {
         mTextView = (TextView) findViewById(R.id.textView2);
         mTextView.setMovementMethod(new ScrollingMovementMethod());
 
+        mEditText_newID = (EditText) findViewById(R.id.editText_newID);
+
         //adding click listener to button. Triggers the built in camera activity.
         findViewById(R.id.button_recognize).setOnClickListener(new View.OnClickListener() {
             @Override
@@ -66,6 +84,25 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
+        //adding click listener to button. Should enroll the photo at mCurrPhotoPath
+        findViewById(R.id.button_enroll).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                Bitmap bitmap = getCurrentBitmap();
+                if(bitmap == null) {
+                    Log.d(LOG_TAG, "Error enrolling. Bitmap is null.");
+                    return;
+            }
+                enroll(bitmap);
+            }
+        });
+
+
+        // for now, using noPhoto as a way to maintain information about whether an image exists to be recognized or enrolled
+        mCurrentPhotoPath = noPhoto;
+
+        // A more complicated queue instantiation may be needed to make this safe from even orientation changes
+        mRequestQueue = Volley.newRequestQueue(this);
     }
 
 
@@ -73,27 +110,34 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         if (requestCode == REQUEST_IMAGE_CAPTURE && resultCode == RESULT_OK) {
-
-            // Code to get a content URI using the path we saved when first creating the most recent photo file.
-            File photoFile = new File(mCurrentPhotoPath);
-            //getting the image Uri
-            Uri photoURI = FileProvider.getUriForFile(this,
-                    "com.example.android.fileprovider",
-                    photoFile);
-
-            try {
-                //getting bitmap object from uri
-                Bitmap bitmap = MediaStore.Images.Media.getBitmap(this.getContentResolver(), photoURI);
-
-                //displaying selected image to imageview
-                mImageView.setImageBitmap(bitmap);
-
-                //calling the method uploadBitmap to upload image
-                uploadBitmap(bitmap);
-            } catch (IOException e) {
-                e.printStackTrace();
+                Bitmap bitmap = getCurrentBitmap();
+                if(bitmap != null) {
+                    mImageView.setImageBitmap(bitmap);
+                    uploadBitmap(bitmap);
+                }
             }
+
+    }
+
+    // returns the bitmap stored at the file located by mCurrentPhotoPath
+    // currently returns null if something goes wrong
+    // should maybe have it throw IO exceptions etc.
+    private Bitmap getCurrentBitmap(){
+        if(mCurrentPhotoPath == noPhoto)
+            return null;
+
+        File photoFile = new File(mCurrentPhotoPath);
+        // Code to get a content URI using the path we saved when first creating the most recent photo file.
+        Uri photoURI = FileProvider.getUriForFile(this,
+                "com.example.android.fileprovider",
+                photoFile);
+        try {
+            Bitmap bitmap = MediaStore.Images.Media.getBitmap(this.getContentResolver(), photoURI);
+            return bitmap;
+        } catch (IOException e) {
+            e.printStackTrace();
         }
+        return null;
     }
 
     // Launch the system's own camera, providing the activity with a place to save the file.
@@ -155,13 +199,62 @@ public class MainActivity extends AppCompatActivity {
         return byteArrayOutputStream.toByteArray();
     }
 
+    /*
+     * Using the photo currently stored in the file at mCurrentPhotoPath, enroll
+     * */
+    private String newID; // a user inputted string which contains a face's name. Additional information here too e.g. mutual friend.
+    // function to add a face to the database
+    private void enroll(final Bitmap bitmap){
+        newID = mEditText_newID.getText().toString();
+        //maybe check for an empty string?
+        Log.d(LOG_TAG,"newID is "+ newID);
+
+
+        // build json parameters
+        JSONObject param = new JSONObject();
+        try {
+            param.put("gallery_name",gallery_name);
+            param.put("subject_id",newID);
+            param.put("image",Base64.encodeToString(getFileDataFromDrawable(bitmap), Base64.DEFAULT) );
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+
+        // build the POST request to enroll
+        JsonObjectRequest jReq = new JsonObjectRequest(Request.Method.POST, url_enroll,param,
+                new Response.Listener() {
+                    // online tutorial doesn't use "Object response", but android studio won't recognize it as an override otherwise
+                    public void onResponse(Object response) {
+                        // Display the first 500 characters of the response string.
+                        mTextView.setText(mCurrentPhotoPath +"Enrolled with Response: "+ response.toString());
+                    }
+                }, new Response.ErrorListener() {
+            @Override
+            public void onErrorResponse(VolleyError error) {
+                mTextView.setText(mCurrentPhotoPath +"That didn't work!");
+            }
+        }){
+            @Override
+            // online tutorial uses some strange syntax in the angular brackets. Changed it to this instead.
+            public Map<String, String> getHeaders() throws AuthFailureError {
+                HashMap<String, String> headers = new HashMap<String, String>();
+                headers.put("Content-Type", "application/json");
+                headers.put("app_id",app_id);
+                headers.put("app_key", app_key);
+                return headers;
+            }
+        };
+
+        // Add the request to the RequestQueue.
+        mRequestQueue.add(jReq);
+    }
+
+
     // modifying this to do a Kairos recognize API call
     private void uploadBitmap(final Bitmap bitmap) {
         String recognize_url = "https://api.kairos.com/recognize";
         final String gallery_name = "Office";
 
-        // A more complicated queue instantiation may be needed to make this safe from even orientation changes
-        RequestQueue queue = Volley.newRequestQueue(this);
 
 
         // For some reason, the JSONObject.put method has to be wrapped in try/catch before android studio will take it
@@ -180,22 +273,12 @@ public class MainActivity extends AppCompatActivity {
                     public void onResponse(Object response) {
                         // Display the first 500 characters of the response string.
                         mTextView.setText(mCurrentPhotoPath +"Response is: "+ response.toString());
+                        Log.d(LOG_TAG, "Response received to Recognize request:" + response.toString());
                     }
                 }, new Response.ErrorListener() {
             @Override
             public void onErrorResponse(
-                    /**
-                     * JsonObjectRequest takes in five paramaters
-                     * Request Type - This specifies the type of the request eg: GET,POST
-                     * URL          - This String param specifies the Request URL
-                     * JSONObject   - This parameter takes in the POST parameters."null" in
-                     *                  case of GET request.
-                     * Listener     -This parameter takes in a implementation of Response.Listener()
-                     *                 interface which is invoked if the request is successful
-                     * Listener     -This parameter takes in a implementation of Error.Listener()
-                     *               interface which is invoked if any error is encountered while processing
-                     *               the request
-                     **/VolleyError error) {
+                VolleyError error) {
                 mTextView.setText(mCurrentPhotoPath +"That didn't work!");
             }
         }){
@@ -212,9 +295,9 @@ public class MainActivity extends AppCompatActivity {
             }
         };
 
-// Add the request to the RequestQueue.
-        queue.add(jReq);
-
+    // Add the request to the RequestQueue.
+        mRequestQueue.add(jReq);
+        Log.d(LOG_TAG, "Sent a Recognize Request!");
 
     }
 }
