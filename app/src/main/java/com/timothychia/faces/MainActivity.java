@@ -61,9 +61,7 @@ public class MainActivity extends AppCompatActivity {
     final String  url_gallery_remove = "https://api.kairos.com/gallery/remove";
     final String noPhoto = "No Photo";
 
-    private static RequestQueue mRequestQueue; // consider moving to an application class to share across activities?
-        // where it is right now, probably doesn't need to be static.
-
+    private RequestQueue mRequestQueue;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -97,15 +95,29 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
+        //adding click listener to button. Should enroll the photo at mCurrPhotoPath
+        findViewById(R.id.button_database).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                manage_database();
+            }
+        });
+
 
         // for now, using noPhoto as a way to maintain information about whether an image exists to be recognized or enrolled
         mCurrentPhotoPath = noPhoto;
 
         // A more complicated queue instantiation may be needed to make this safe from even orientation changes
-        mRequestQueue = Volley.newRequestQueue(this);
+//        mRequestQueue = Volley.newRequestQueue(this);
+
+        // attempting the more complicated version.
+        mRequestQueue =  RequestQueueSingleton.getInstance(this.getApplicationContext()).getRequestQueue();
     }
 
-
+private void manage_database(){
+    Intent intent = new Intent(this, DatabaseManagementActivity.class);
+    startActivity(intent);
+}
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
@@ -261,7 +273,7 @@ public class MainActivity extends AppCompatActivity {
         JSONObject recognize_param = new JSONObject();
         try {
             recognize_param.put("gallery_name","People");
-            recognize_param.put("threshold","0");
+            recognize_param.put("threshold","0"); // use 0 here to force a result if a face existed
             recognize_param.put("image",Base64.encodeToString(getFileDataFromDrawable(bitmap), Base64.DEFAULT) );
         } catch (JSONException e) {
             e.printStackTrace();
@@ -271,9 +283,34 @@ public class MainActivity extends AppCompatActivity {
                 new Response.Listener() {
                     // online tutorial doesn't use "Object response", but android studio won't recognize it as an override otherwise
                     public void onResponse(Object response) {
-                        // Display the first 500 characters of the response string.
-                        mTextView.setText(mCurrentPhotoPath +"Response is: "+ response.toString());
+                        // cast the response and attempt to parse through it, using try catch and opt statements for errors/exceptions
+
+                        JSONObject response_json = (JSONObject) response;
+                        JSONObject transaction = new JSONObject();
+
+                        try {
+                            transaction = response_json.getJSONArray("images").getJSONObject(0).getJSONObject("transaction");
+                        } catch (JSONException e) {
+                            // should only happen when there's no faces in the image, or Kairos detected other errors
+                            e.printStackTrace();
+                            Log.d(LOG_TAG,"JSON exception");
+                        }
+                        String status = transaction.optString("status","error getting status");
+                        Log.d(LOG_TAG, "status:" + status);
+
+
+                        if( status.equals("error getting status"))
+                            mTextView.setText("An error occured..");
+                        else if( status.equals( "failure") )
+                            mTextView.setText("No face found");
+                        else {
+                            String best_candidate =  transaction.optString("subject_id","failed to find subject_id in json");
+                            mTextView.setText(mCurrentPhotoPath +"Face is: "+ best_candidate);
+                        }
+
+                        // Print the entire response to the debugging log.
                         Log.d(LOG_TAG, "Response received to Recognize request:" + response.toString());
+                        Log.d(LOG_TAG, "status:" + status);
                     }
                 }, new Response.ErrorListener() {
             @Override
