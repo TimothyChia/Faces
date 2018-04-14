@@ -112,12 +112,20 @@ public class MainActivity extends AppCompatActivity {
 
         // attempting the more complicated version.
         mRequestQueue =  RequestQueueSingleton.getInstance(this.getApplicationContext()).getRequestQueue();
+
+        // temp to test bluetooth
+        test_bluetooth();
     }
 
 private void manage_database(){
     Intent intent = new Intent(this, DatabaseManagementActivity.class);
     startActivity(intent);
 }
+
+    private void test_bluetooth(){
+        Intent intent = new Intent(this, BluetoothTest.class);
+        startActivity(intent);
+    }
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {

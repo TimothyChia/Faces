@@ -3,6 +3,8 @@
     package="com.timothychia.faces">
 
     <!-- adding permissions -->
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application
@@ -31,7 +33,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity android:name=".DatabaseManagementActivity" android:parentActivityName=".MainActivity" ></activity>
+        <activity
+            android:name=".DatabaseManagementActivity"
+            android:parentActivityName=".MainActivity" />
+        <activity
+            android:name=".BluetoothTest"
+            android:label="@string/title_activity_bluetooth_test"
+            android:theme="@style/AppTheme.NoActionBar"></activity>
     </application>
 
 </manifest>
