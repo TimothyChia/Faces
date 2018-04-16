@@ -16,13 +16,13 @@ public class BluetoothConnectedThread extends Thread {
 
     private static final String TAG = "BT_Connected_T_Debug";
 
+    // made these public to make anonymous subclass less verbose.
+    public final BluetoothSocket mmSocket;
+    public final InputStream mmInStream;
+    public final OutputStream mmOutStream;
+    public byte[] mmBuffer; // mmBuffer store for the stream
 
-    private final BluetoothSocket mmSocket;
-    private final InputStream mmInStream;
-    private final OutputStream mmOutStream;
-    private byte[] mmBuffer; // mmBuffer store for the stream
-
-    private final Handler mHandler;
+    public final Handler mHandler;
 
     public BluetoothConnectedThread(BluetoothSocket socket, Handler handler) {
         mmSocket = socket;
@@ -63,6 +63,13 @@ public class BluetoothConnectedThread extends Thread {
 //                     testing by constantly printing the read buffer
                 String s = new String(mmBuffer);
                 Log.d(TAG, s);
+                mHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        // this will run in the main thread
+
+                    }
+                });
 
 //                    // Send the obtained bytes to the UI activity.
 //                    Message readMsg = mHandler.obtainMessage(

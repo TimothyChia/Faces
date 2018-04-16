@@ -37,9 +37,11 @@ import com.android.volley.toolbox.Volley;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.HashMap;
@@ -50,6 +52,8 @@ import java.util.UUID;
 public class MainActivity extends AppCompatActivity {
     public static final String EXTRA_MESSAGE = "com.example.myfirstapp.MESSAGE";
     private static final String LOG_TAG =  MainActivity.class.getSimpleName();
+    private static final String TAG_WRISTBAND =  "Wristband Tag";
+
     private ImageView mImageView;
     private TextView mTextView;
     private EditText mEditText_newID;
@@ -151,6 +155,8 @@ public class MainActivity extends AppCompatActivity {
             startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT);
         }
 
+        mWristbandHandler = new Handler();
+
         // go through the devices currently paired
         Set<BluetoothDevice> pairedDevices = mBluetoothAdapter.getBondedDevices();
         Log.d(LOG_TAG,"List button pressed.");
@@ -169,14 +175,75 @@ public class MainActivity extends AppCompatActivity {
                     @Override
                     public void run() {
                         super.run();
-                        mBluetoothConnectedThread = new BluetoothConnectedThread( getMmSocket(), mWristbandHandler );
-                        mBluetoothConnectedThread.start();
+                        startWristbandThread(getMmSocket());
+
                     }
                 };
                 mBluetoothConnectThread.start();
             }
         }
 
+    }
+
+    void startWristbandThread(BluetoothSocket mmSocket ){
+        final String RECOGNIZE_REQUEST = "Recognize Request\n";
+
+
+        mBluetoothConnectedThread = new BluetoothConnectedThread(  mmSocket , mWristbandHandler ){
+            @Override
+            public void run() {
+//                    mmBuffer = new byte[1024];
+//                    int numBytes; // bytes returned from read()
+                    StringBuffer fromWristbandBuffer = new StringBuffer(1024);
+
+//             Keep listening to the InputStream until an exception occurs.
+                    while (true) {
+                        try {
+                            Log.d(TAG_WRISTBAND, "Attempting to read");
+
+                            BufferedReader in
+                                    = new BufferedReader(new InputStreamReader(mmInStream));
+
+// use blocking read calls to read one char at a time until a newline is found
+                            while(true){
+                                char inChar = (char) in.read();
+                                fromWristbandBuffer.append(inChar) ;
+                                if(inChar == '\n')
+                                    break;
+                            }
+                            Log.d(TAG_WRISTBAND, fromWristbandBuffer.toString());
+                            String fromWristband = fromWristbandBuffer.toString();
+                            if(fromWristband.equals( RECOGNIZE_REQUEST )){
+                                mHandler.post(new Runnable() {
+                                    @Override
+                                    public void run() {
+                                        // this will run in the main thread
+                                        testRunnable();
+                                    }
+                                });
+
+                            }
+                            
+//                    // Send the obtained bytes to the UI activity.
+//                    Message readMsg = mHandler.obtainMessage(
+//                            MessageConstants.MESSAGE_READ, numBytes, -1,
+//                            mmBuffer);
+//                    readMsg.sendToTarget();
+                        } catch (IOException e) {
+                            Log.d(TAG_WRISTBAND, "Input stream was disconnected", e);
+                            break;
+                        }
+                    }
+
+
+            }
+        };
+        mBluetoothConnectedThread.start();
+
+    }
+
+    public void testRunnable(){
+        mTextView.setText("Runnable executed!");
     }
 
     // connected to a UI button. attempts to write, using the thread.
