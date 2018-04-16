@@ -66,10 +66,6 @@ public class BluetoothTest extends AppCompatActivity {
             Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
             startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT);
         }
-
-        Log.d(TAG,Thread.currentThread().getName());
-        Log.d(TAG,"thread priority : "
-                + Thread.currentThread().getPriority() );
     }
 
 
@@ -96,7 +92,7 @@ public class BluetoothTest extends AppCompatActivity {
 
                 // launch a thread to open a connection this paired device
                 mConnectThread = new ConnectThread(device);
-                mConnectThread.run();
+                mConnectThread.start();
             }
         }
     }
@@ -161,31 +157,11 @@ public class BluetoothTest extends AppCompatActivity {
     }
     private void manageMyConnectedSocket(BluetoothSocket socket){
         mConnectedThread = new ConnectedThread(socket);
-        mConnectThread.setPriority(1);
-
-        mConnectedThread.setPriority(1);
-        Log.d(TAG,"ConnectedThread priority : "
-                + mConnectedThread.getPriority() );
         mConnectedThread.start();
-//        while(true)
-        {
-            Log.d(TAG,"back in UI thread");
-        }
-
-    }
-
-    private void testThreading(){
-//        while(true)
-        {
-            Log.d(TAG,"back in UI thread");
-        }
     }
 
     public void test(View view){
         Log.d(TAG, "Attempting to write");
-        Log.d(TAG,Thread.currentThread().getName());
-        Log.d(TAG,"thread priority : "
-                + Thread.currentThread().getPriority() );
         //don't forget the newline my arduino code is expecting!
         mConnectedThread.write("Testing\n".toString().getBytes());
 
@@ -225,18 +201,6 @@ public class BluetoothTest extends AppCompatActivity {
         }
 
         public void run() {
-
-            Log.d(TAG,Thread.currentThread().getName());
-            Log.d(TAG," priority : "
-                    + Thread.currentThread().getPriority() );
-//            Thread.currentThread().setPriority(4);
-            Log.d(TAG,"ConnectedThread priority : "
-                    + Thread.currentThread().getPriority() );
-//            Thread.currentThread().setPriority(3);
-            Log.d(TAG,"ConnectedThread priority : "
-                    + mConnectedThread.getPriority() );
-
-
             mmBuffer = new byte[1024];
             int numBytes; // bytes returned from read()
 

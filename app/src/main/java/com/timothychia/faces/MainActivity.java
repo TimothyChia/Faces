@@ -3,11 +3,15 @@
 
 package com.timothychia.faces;
 
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothSocket;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.media.Image;
 import android.net.Uri;
 import android.os.Environment;
+import android.os.Handler;
 import android.provider.MediaStore;
 import android.support.v4.content.FileProvider;
 import android.support.v7.app.AppCompatActivity;
@@ -40,6 +44,8 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 
 public class MainActivity extends AppCompatActivity {
     public static final String EXTRA_MESSAGE = "com.example.myfirstapp.MESSAGE";
@@ -48,6 +54,8 @@ public class MainActivity extends AppCompatActivity {
     private TextView mTextView;
     private EditText mEditText_newID;
     static final int REQUEST_IMAGE_CAPTURE = 1;
+    static final int REQUEST_ENABLE_BT = 2;
+
 
     private String app_id = "a1731ed8";
     private String app_key = "d3a579a339de2805b54e53dcd72ee40c";
@@ -62,6 +70,15 @@ public class MainActivity extends AppCompatActivity {
     final String noPhoto = "No Photo";
 
     private RequestQueue mRequestQueue;
+
+    private BluetoothAdapter mBluetoothAdapter;
+    private BluetoothConnectThread mBluetoothConnectThread;
+    private BluetoothConnectedThread mBluetoothConnectedThread;
+
+    private Handler mWristbandHandler;
+
+    //SPP UUID. Should be the UUID for HC 05
+    static final UUID mUUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -117,15 +134,58 @@ public class MainActivity extends AppCompatActivity {
         test_bluetooth();
     }
 
-private void manage_database(){
-    Intent intent = new Intent(this, DatabaseManagementActivity.class);
-    startActivity(intent);
-}
-
-    private void test_bluetooth(){
-        Intent intent = new Intent(this, BluetoothTest.class);
+    private void manage_database(){
+        Intent intent = new Intent(this, DatabaseManagementActivity.class);
         startActivity(intent);
     }
+
+    private void test_bluetooth(){
+        // get the device's BA. need permissions in manifest.
+        mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
+        if (mBluetoothAdapter == null) {
+            // Device doesn't support Bluetooth
+        }
+        // enable bluetooth
+        if (!mBluetoothAdapter.isEnabled()) {
+            Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+            startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT);
+        }
+
+        // go through the devices currently paired
+        Set<BluetoothDevice> pairedDevices = mBluetoothAdapter.getBondedDevices();
+        Log.d(LOG_TAG,"List button pressed.");
+
+        if (pairedDevices.size() > 0) {
+            // There are paired devices. Get the name and address of each paired device.
+            for (BluetoothDevice device : pairedDevices) {
+                String deviceName = device.getName();
+                String deviceHardwareAddress = device.getAddress(); // MAC address
+                Log.d(LOG_TAG,deviceName);
+                Log.d(LOG_TAG,deviceHardwareAddress);
+
+                // launch a thread to open a connection this paired device
+                // overide run() to call our particular management thread
+                mBluetoothConnectThread = new BluetoothConnectThread(device,mUUID){
+                    @Override
+                    public void run() {
+                        super.run();
+                        mBluetoothConnectedThread = new BluetoothConnectedThread( getMmSocket(), mWristbandHandler );
+                        mBluetoothConnectedThread.start();
+                    }
+                };
+                mBluetoothConnectThread.start();
+            }
+        }
+
+    }
+
+    // connected to a UI button. attempts to write, using the thread.
+    public void testWrite(View view){
+        Log.d("debug_write", "Attempting to write");
+        //don't forget the newline my arduino code is expecting!
+        mBluetoothConnectedThread.write("Testing\n".toString().getBytes());
+    }
+
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
@@ -136,6 +196,14 @@ private void manage_database(){
                     uploadBitmap(bitmap);
                 }
             }
+
+        if (requestCode == REQUEST_ENABLE_BT ) {
+            if( resultCode == RESULT_OK)
+                Log.d(LOG_TAG,"Bluetooth enable success.");
+            else
+                Log.d(LOG_TAG,"Bluetooth enable failed..");
+            test_bluetooth(); // return to the testing function that should have started the intent to begin wtih
+        }
 
     }
 
