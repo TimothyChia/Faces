@@ -77,4 +77,13 @@
         app:layout_constraintBottom_toTopOf="@+id/button_recognize"
         app:layout_constraintStart_toStartOf="parent" />
 
+    <Button
+        android:id="@+id/button3"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:onClick="testWrite"
+        android:text="Button"
+        tools:layout_editor_absoluteX="166dp"
+        tools:layout_editor_absoluteY="56dp" />
+
 </android.support.constraint.ConstraintLayout>
