@@ -192,27 +192,16 @@ public class MainActivity extends AppCompatActivity {
         mBluetoothConnectedThread = new BluetoothConnectedThread(  mmSocket , mWristbandHandler ){
             @Override
             public void run() {
-//                    mmBuffer = new byte[1024];
-//                    int numBytes; // bytes returned from read()
-                    StringBuffer fromWristbandBuffer = new StringBuffer(1024);
-
+                String fromWristband;
+                BufferedReader in = new BufferedReader(new InputStreamReader(mmInStream));
 //             Keep listening to the InputStream until an exception occurs.
                     while (true) {
                         try {
                             Log.d(TAG_WRISTBAND, "Attempting to read");
+                            fromWristband=in.readLine();
+                            Log.d(TAG_WRISTBAND, fromWristband);
 
-                            BufferedReader in
-                                    = new BufferedReader(new InputStreamReader(mmInStream));
-
-// use blocking read calls to read one char at a time until a newline is found
-                            while(true){
-                                char inChar = (char) in.read();
-                                fromWristbandBuffer.append(inChar) ;
-                                if(inChar == '\n')
-                                    break;
-                            }
-                            Log.d(TAG_WRISTBAND, fromWristbandBuffer.toString());
-                            String fromWristband = fromWristbandBuffer.toString();
+                            // Have the UI thread respond to whatever the wristband just sent.
                             if(fromWristband.equals( RECOGNIZE_REQUEST )){
                                 mHandler.post(new Runnable() {
                                     @Override
@@ -221,14 +210,7 @@ public class MainActivity extends AppCompatActivity {
                                         testRunnable();
                                     }
                                 });
-
                             }
-                            
-//                    // Send the obtained bytes to the UI activity.
-//                    Message readMsg = mHandler.obtainMessage(
-//                            MessageConstants.MESSAGE_READ, numBytes, -1,
-//                            mmBuffer);
-//                    readMsg.sendToTarget();
                         } catch (IOException e) {
                             Log.d(TAG_WRISTBAND, "Input stream was disconnected", e);
                             break;
