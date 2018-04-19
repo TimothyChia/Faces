@@ -8,7 +8,6 @@ import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
 import android.content.Intent;
 import android.graphics.Bitmap;
-import android.media.Image;
 import android.net.Uri;
 import android.os.Environment;
 import android.os.Handler;
@@ -23,16 +22,13 @@ import android.view.View;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import com.android.volley.AuthFailureError;
-import com.android.volley.NetworkResponse;
 import com.android.volley.Request;
 import com.android.volley.RequestQueue;
 import com.android.volley.Response;
 import com.android.volley.VolleyError;
 import com.android.volley.toolbox.JsonObjectRequest;
-import com.android.volley.toolbox.Volley;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -49,10 +45,21 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import static android.graphics.Bitmap.createScaledBitmap;
+
 public class MainActivity extends AppCompatActivity {
     public static final String EXTRA_MESSAGE = "com.example.myfirstapp.MESSAGE";
     private static final String LOG_TAG =  MainActivity.class.getSimpleName();
     private static final String TAG_WRISTBAND =  "Wristband Tag";
+
+    /* Strings used to communicate with the other modules (Android sends)*/
+    private final String MATCH_FOUND = "Match Found\n";
+    private final String NO_MATCH = "No Match\n";
+    private final String GET_PHOTO = "Get Photo\n";
+
+    /* Strings used to communicate with the other modules (Android receives)*/
+    private final String RECOGNIZE_REQUEST = "Recognize Request"; // no newline because using readline
+
 
     private ImageView mImageView;
     private TextView mTextView;
@@ -65,24 +72,35 @@ public class MainActivity extends AppCompatActivity {
     private String app_key = "d3a579a339de2805b54e53dcd72ee40c";
     final String gallery_name = "People";
 
-    final String  url_enroll = "https://api.kairos.com/enroll";
-    final String url_recognize = "https://api.kairos.com/recognize";
-    final String  url_gallery_list = "https://api.kairos.com/gallery/list_all";
-    final String  url_gallery_view = "https://api.kairos.com/gallery/view";
-    final String  url_view_subject = "https://api.kairos.com/gallery/view_subject";
-    final String  url_gallery_remove = "https://api.kairos.com/gallery/remove";
-    final String noPhoto = "No Photo";
+    private final String  url_enroll = "https://api.kairos.com/enroll";
+    private final String url_recognize = "https://api.kairos.com/recognize";
+    private final String  url_gallery_list = "https://api.kairos.com/gallery/list_all";
+    private final String  url_gallery_view = "https://api.kairos.com/gallery/view";
+    private final String  url_view_subject = "https://api.kairos.com/gallery/view_subject";
+    private final String  url_gallery_remove = "https://api.kairos.com/gallery/remove";
+    private final String noPhoto = "No Photo";
 
     private RequestQueue mRequestQueue;
 
     private BluetoothAdapter mBluetoothAdapter;
-    private BluetoothConnectThread mBluetoothConnectThread;
-    private BluetoothConnectedThread mBluetoothConnectedThread;
+    private BluetoothConnectThread mWristbandConnectThread;
+    private BluetoothConnectThread mCameraConnectThread;
+
+    private BluetoothConnectedThread mWristbandThread;
+    private BluetoothConnectedThread mCameraThread;
+
 
     private Handler mWristbandHandler;
+    private Handler mCameraHandler;
 
-    //SPP UUID. Should be the UUID for HC 05
+    //SPP UUID. Should be the UUID for HC 05. Corresponds to what services are available on it.
     static final UUID mUUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
+
+    String mCurrentPhotoPath;
+
+    /* Used to tune the API performance. */
+    private double mThreshold = 0.50;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -112,11 +130,12 @@ public class MainActivity extends AppCompatActivity {
                     Log.d(LOG_TAG, "Error enrolling. Bitmap is null.");
                     return;
             }
-                enroll(bitmap);
+                String newID = mEditText_newID.getText().toString();
+                enroll(bitmap, newID);
             }
         });
 
-        //adding click listener to button. Should enroll the photo at mCurrPhotoPath
+        //adding click listener to button. Launches the database activity.
         findViewById(R.id.button_database).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
@@ -125,80 +144,124 @@ public class MainActivity extends AppCompatActivity {
         });
 
 
+
         // for now, using noPhoto as a way to maintain information about whether an image exists to be recognized or enrolled
         mCurrentPhotoPath = noPhoto;
 
-        // A more complicated queue instantiation may be needed to make this safe from even orientation changes
-//        mRequestQueue = Volley.newRequestQueue(this);
-
-        // attempting the more complicated version.
+        // Initialize request queue in a long lasting way.
         mRequestQueue =  RequestQueueSingleton.getInstance(this.getApplicationContext()).getRequestQueue();
 
-        // temp to test bluetooth
-        test_bluetooth();
+        // Connect other modules via bluetooth.
+//        connectDevices();
     }
 
+    /* For returning to this activity from other activities. */
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == REQUEST_IMAGE_CAPTURE && resultCode == RESULT_OK) {
+            Bitmap bitmap = getCurrentBitmap();
+            if(bitmap != null) {
+                mImageView.setImageBitmap(bitmap);
+                uploadBitmap(bitmap);
+            }
+        }
+
+        if (requestCode == REQUEST_ENABLE_BT ) {
+            if( resultCode == RESULT_OK)
+                Log.d(LOG_TAG,"Bluetooth enable success.");
+            else
+                Log.d(LOG_TAG,"Bluetooth enable failed..");
+            connectDevices(); // return to the testing function that should have started the intent to begin wtih
+        }
+
+    }
+
+
+    /* Launch a separate activity to let the user view the database. */
     private void manage_database(){
         Intent intent = new Intent(this, DatabaseManagementActivity.class);
         startActivity(intent);
     }
 
-    private void test_bluetooth(){
-        // get the device's BA. need permissions in manifest.
+    /* Connect the wristband and camera modules, and start their threads and handlers. */
+    private void connectDevices(){
+        String wristbandName = "HC-05";
+        String cameraName = "Faces Camera";
+
+
+        /* Get a valid bluetooth adapter. */
         mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
         if (mBluetoothAdapter == null) {
             // Device doesn't support Bluetooth
         }
-        // enable bluetooth
         if (!mBluetoothAdapter.isEnabled()) {
             Intent enableBtIntent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
             startActivityForResult(enableBtIntent, REQUEST_ENABLE_BT);
         }
-
+        /* Initialize handlers on UI thread. */
         mWristbandHandler = new Handler();
+        mCameraHandler = new Handler();
 
-        // go through the devices currently paired
+        /* Get the wristband and camera BluetoothDevice.*/
+        BluetoothDevice wristbandDevice = null;
+        BluetoothDevice cameraDevice = null;
         Set<BluetoothDevice> pairedDevices = mBluetoothAdapter.getBondedDevices();
-        Log.d(LOG_TAG,"List button pressed.");
-
         if (pairedDevices.size() > 0) {
             // There are paired devices. Get the name and address of each paired device.
             for (BluetoothDevice device : pairedDevices) {
                 String deviceName = device.getName();
-                String deviceHardwareAddress = device.getAddress(); // MAC address
                 Log.d(LOG_TAG,deviceName);
-                Log.d(LOG_TAG,deviceHardwareAddress);
-
-                // launch a thread to open a connection this paired device
-                // overide run() to call our particular management thread
-                mBluetoothConnectThread = new BluetoothConnectThread(device,mUUID){
-                    @Override
-                    public void run() {
-                        super.run();
-                        startWristbandThread(getMmSocket());
-
-                    }
-                };
-                mBluetoothConnectThread.start();
+                if(deviceName.equals(wristbandName))
+                    wristbandDevice = device;
+                if(deviceName.equals(cameraName))
+                    cameraDevice = device;
             }
         }
+        else{
+            Log.d(LOG_TAG,"No paired devices found!");
+        }
+
+        /* Start the device connection threads. Override run to launch the device management threads after.*/
+        if(wristbandDevice != null){
+            mWristbandConnectThread = new BluetoothConnectThread(wristbandDevice,mUUID){
+                @Override
+                public void run() {
+                    super.run();
+                    startWristbandThread(getMmSocket());
+
+                }
+            };
+            mWristbandConnectThread.start();
+        }
+        else Log.d(LOG_TAG,"wristBandDevice null! Thread not launched.");
+        if(cameraDevice != null){
+            mCameraConnectThread = new BluetoothConnectThread(cameraDevice,mUUID){
+                @Override
+                public void run() {
+                    super.run();
+                    startCameraThread(getMmSocket());
+                }
+            };
+            mCameraConnectThread.start();
+        }
+        else Log.d(LOG_TAG,"cameraDevice null! Thread not launched.");
 
     }
 
+    /* Starts a thread to manage the wristband. */
     void startWristbandThread(BluetoothSocket mmSocket ){
-        final String RECOGNIZE_REQUEST = "Recognize Request\n";
 
 
-        mBluetoothConnectedThread = new BluetoothConnectedThread(  mmSocket , mWristbandHandler ){
+        mWristbandThread = new BluetoothConnectedThread(  mmSocket , mWristbandHandler ){
             @Override
             public void run() {
-                String fromWristband;
-                BufferedReader in = new BufferedReader(new InputStreamReader(mmInStream));
+                String fromWristband; String tmp;
+                BufferedReader in = new BufferedReader(new InputStreamReader(mmInStream),200000);
 //             Keep listening to the InputStream until an exception occurs.
                     while (true) {
                         try {
                             Log.d(TAG_WRISTBAND, "Attempting to read");
-                            fromWristband=in.readLine();
+                            fromWristband = in.readLine();
                             Log.d(TAG_WRISTBAND, fromWristband);
 
                             // Have the UI thread respond to whatever the wristband just sent.
@@ -206,8 +269,7 @@ public class MainActivity extends AppCompatActivity {
                                 mHandler.post(new Runnable() {
                                     @Override
                                     public void run() {
-                                        // this will run in the main thread
-                                        testRunnable();
+                                        recognize(); // currently the start of the recognition chain
                                     }
                                 });
                             }
@@ -220,9 +282,53 @@ public class MainActivity extends AppCompatActivity {
 
             }
         };
-        mBluetoothConnectedThread.start();
+        mWristbandThread.start();
 
     }
+
+    void startCameraThread(BluetoothSocket mmSocket ){
+
+
+        mCameraThread = new BluetoothConnectedThread(  mmSocket , mCameraHandler ){
+            @Override
+            public void run() {
+                String fromWristband; String tmp;
+                BufferedReader in = new BufferedReader(new InputStreamReader(mmInStream),200000);
+//             Keep listening to the InputStream until an exception occurs.
+                while (true) {
+                    try {
+                        Log.d(TAG_WRISTBAND, "Attempting to read");
+                        fromWristband = in.readLine();
+                        Log.d(TAG_WRISTBAND, fromWristband);
+
+
+                        // Have the UI thread respond to whatever the wristband just sent.
+                        if(fromWristband.equals( RECOGNIZE_REQUEST )){
+                            mHandler.post(new Runnable() {
+                                @Override
+                                public void run() {
+                                    // this will run in the main thread
+//                                        testRunnable();
+                                    dispatchTakePictureIntent(); // currently the start of the recognition chain
+
+                                }
+                            });
+                        }
+                    } catch (IOException e) {
+                        Log.d(TAG_WRISTBAND, "Input stream was disconnected", e);
+                        break;
+                    }
+                }
+
+
+            }
+        };
+        mCameraThread.start();
+
+    }
+
+
+
 
     public void testRunnable(){
         mTextView.setText("Runnable executed!");
@@ -232,33 +338,46 @@ public class MainActivity extends AppCompatActivity {
     public void testWrite(View view){
         Log.d("debug_write", "Attempting to write");
         //don't forget the newline my arduino code is expecting!
-        mBluetoothConnectedThread.write("Testing\n".toString().getBytes());
+        mWristbandThread.write("Testing\n".toString().getBytes());
     }
 
 
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        if (requestCode == REQUEST_IMAGE_CAPTURE && resultCode == RESULT_OK) {
-                Bitmap bitmap = getCurrentBitmap();
-                if(bitmap != null) {
-                    mImageView.setImageBitmap(bitmap);
-                    uploadBitmap(bitmap);
-                }
-            }
-
-        if (requestCode == REQUEST_ENABLE_BT ) {
-            if( resultCode == RESULT_OK)
-                Log.d(LOG_TAG,"Bluetooth enable success.");
-            else
-                Log.d(LOG_TAG,"Bluetooth enable failed..");
-            test_bluetooth(); // return to the testing function that should have started the intent to begin wtih
+    /* Functions to send strings to the other modules.
+     * Caller is responsible for appending newline.
+     * Does a null check in case the app is being debugged without the other modules connected. */
+    private void send_wristband(String string){
+        if(mWristbandThread == null){
+            Log.d(LOG_TAG,"No wristband thread! Skipping write.");
         }
-
+        else{
+            Log.d("debug_write", "Attempting to write this to wristband.");
+            mWristbandThread.write(string.toString().getBytes());
+        }
+    }
+    private void send_camera(String string){
+        if(mCameraThread == null){
+            Log.d(LOG_TAG,"No camera thread! Skipping write.");
+        }
+        else{
+            Log.d("debug_write", "Attempting to write this to camera.");
+            mCameraThread.write(string.toString().getBytes());
+        }
     }
 
-    // returns the bitmap stored at the file located by mCurrentPhotoPath
-    // currently returns null if something goes wrong
-    // should maybe have it throw IO exceptions etc.
+    /* Uses some camera to get a photo, then makes the API call. */
+    private void recognize(){
+        /* A version without the camera module. */
+        dispatchTakePictureIntent();
+
+        /* A version using the camera module. */
+//        send_camera(GET_PHOTO);
+    }
+
+
+
+    /* Returns the bitmap stored at the file located by mCurrentPhotoPath
+    *  currently returns null if something goes wrong
+    *  should maybe have it throw IO exceptions etc. */
     private Bitmap getCurrentBitmap(){
         if(mCurrentPhotoPath == noPhoto)
             return null;
@@ -270,6 +389,8 @@ public class MainActivity extends AppCompatActivity {
                 photoFile);
         try {
             Bitmap bitmap = MediaStore.Images.Media.getBitmap(this.getContentResolver(), photoURI);
+            bitmap = createScaledBitmap(bitmap , 320,240, false); //scale it down to the same size as OV7670 pictures.
+
             return bitmap;
         } catch (IOException e) {
             e.printStackTrace();
@@ -301,9 +422,6 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-
-
-    String mCurrentPhotoPath;
     // Helper function that creates a file for the camera activity to save data into.
     private File createImageFile() throws IOException {
         // Create an image file name
@@ -337,15 +455,13 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /*
-     * Using the photo currently stored in the file at mCurrentPhotoPath, enroll
+     * Enroll the bitmap under newID.
+     * newID = a user inputted string which contains a face's name. Additional information here too e.g. mutual friend.
      * */
-    private String newID; // a user inputted string which contains a face's name. Additional information here too e.g. mutual friend.
     // function to add a face to the database
-    private void enroll(final Bitmap bitmap){
-        newID = mEditText_newID.getText().toString();
+    private void enroll(final Bitmap bitmap,String newID){
         //maybe check for an empty string?
         Log.d(LOG_TAG,"newID is "+ newID);
-
 
         // build json parameters
         JSONObject param = new JSONObject();
@@ -408,34 +524,56 @@ public class MainActivity extends AppCompatActivity {
                 new Response.Listener() {
                     // online tutorial doesn't use "Object response", but android studio won't recognize it as an override otherwise
                     public void onResponse(Object response) {
-                        // cast the response and attempt to parse through it, using try catch and opt statements for errors/exceptions
+                        // Print the entire response to the debugging log.
+                        Log.d(LOG_TAG, "Response received to Recognize request:" + response.toString());
 
+                        // cast the response and attempt to parse through it, using try catch and opt statements for errors/exceptions
                         JSONObject response_json = (JSONObject) response;
                         JSONObject transaction = new JSONObject();
 
+                        /* An error has occurred, such as no faces in image.*/
+                        if(response_json.optJSONArray("Errors") != null ){
+                            String error = "Unknown error.";
+                            try{
+                                error = response_json.getJSONArray("Errors").getJSONObject(0).getString("Message");
+                            } catch (JSONException e) {
+                                error = "Unknown error. JSON Exception.";
+                                e.printStackTrace();
+                            }finally {
+                                mTextView.setText("Error recognizing: " + error);
+                                Log.d(LOG_TAG,"Recognize response is an error.");
+//                            send_wristband(NO_MATCH);
+//                                send_wristband(error + "\n");
+                                return;
+                            }
+                        }
+                        /* Since no error occurred, attempt everything else in a try/catch. */
                         try {
                             transaction = response_json.getJSONArray("images").getJSONObject(0).getJSONObject("transaction");
-                        } catch (JSONException e) {
-                            // should only happen when there's no faces in the image, or Kairos detected other errors
+                            String status = transaction.getString("status");
+                            double confidence = Double.parseDouble((transaction.getString("confidence")));
+                            String best_candidate =  transaction.getString("subject_id");
+                            /* If face is recognized */
+                            if(confidence >= mThreshold ){
+                                mTextView.setText(mCurrentPhotoPath +"Face is: "+ best_candidate);
+//                            send_wristband(MATCH_FOUND);
+//                            send_wristband(best_candidate+"\n");
+                            }
+                            /* If face is not recognized. */
+                            else{
+                              mTextView.setText("A new face!");
+//                            send_wristband(MATCH_FOUND);
+//                            send_wristband("A new face!" + "\n");
+                            }
+                        }
+                        /* Only occurs if API returns a previously unseen type of non-error response. */
+                        catch (JSONException e) {
                             e.printStackTrace();
-                            Log.d(LOG_TAG,"JSON exception");
+                            Log.d(LOG_TAG,"JSON exception.");
+                            mTextView.setText("JSON exception.");
+                            // send_wristband(NO_MATCH);
+                            // send_wristband("JSON error occurred." + "\n");
                         }
-                        String status = transaction.optString("status","error getting status");
-                        Log.d(LOG_TAG, "status:" + status);
-
-
-                        if( status.equals("error getting status"))
-                            mTextView.setText("An error occured..");
-                        else if( status.equals( "failure") )
-                            mTextView.setText("No face found");
-                        else {
-                            String best_candidate =  transaction.optString("subject_id","failed to find subject_id in json");
-                            mTextView.setText(mCurrentPhotoPath +"Face is: "+ best_candidate);
-                        }
-
-                        // Print the entire response to the debugging log.
-                        Log.d(LOG_TAG, "Response received to Recognize request:" + response.toString());
-                        Log.d(LOG_TAG, "status:" + status);
                     }
                 }, new Response.ErrorListener() {
             @Override
