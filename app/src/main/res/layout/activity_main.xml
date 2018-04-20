@@ -32,7 +32,7 @@
         app:srcCompat="@android:drawable/btn_dialog" />
 
     <Button
-        android:id="@+id/button_recognize"
+        android:id="@+id/button_list"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginBottom="16dp"
@@ -40,12 +40,12 @@
         android:layout_marginStart="8dp"
         android:text="Recognize"
         app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toStartOf="@+id/button_enroll"
+        app:layout_constraintEnd_toStartOf="@+id/button_remove"
         app:layout_constraintHorizontal_bias="0.053"
         app:layout_constraintStart_toStartOf="parent" />
 
     <Button
-        android:id="@+id/button_enroll"
+        android:id="@+id/button_remove"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginBottom="16dp"
@@ -64,7 +64,7 @@
         android:hint="Name to enroll:"
         android:inputType="textPersonName"
         android:text="Name?"
-        app:layout_constraintBottom_toTopOf="@+id/button_enroll"
+        app:layout_constraintBottom_toTopOf="@+id/button_remove"
         app:layout_constraintEnd_toEndOf="parent" />
 
     <Button
@@ -74,7 +74,7 @@
         android:layout_marginBottom="8dp"
         android:layout_marginStart="8dp"
         android:text="Manage Database"
-        app:layout_constraintBottom_toTopOf="@+id/button_recognize"
+        app:layout_constraintBottom_toTopOf="@+id/button_list"
         app:layout_constraintStart_toStartOf="parent" />
 
     <Button

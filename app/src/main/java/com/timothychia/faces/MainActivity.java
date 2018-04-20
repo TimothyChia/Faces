@@ -114,7 +114,7 @@ public class MainActivity extends AppCompatActivity {
         mEditText_newID = (EditText) findViewById(R.id.editText_newID);
 
         //adding click listener to button. Triggers the built in camera activity.
-        findViewById(R.id.button_recognize).setOnClickListener(new View.OnClickListener() {
+        findViewById(R.id.button_list).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
                 dispatchTakePictureIntent();
@@ -122,7 +122,7 @@ public class MainActivity extends AppCompatActivity {
         });
 
         //adding click listener to button. Should enroll the photo at mCurrPhotoPath
-        findViewById(R.id.button_enroll).setOnClickListener(new View.OnClickListener() {
+        findViewById(R.id.button_remove).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
                 Bitmap bitmap = getCurrentBitmap();
@@ -152,7 +152,7 @@ public class MainActivity extends AppCompatActivity {
         mRequestQueue =  RequestQueueSingleton.getInstance(this.getApplicationContext()).getRequestQueue();
 
         // Connect other modules via bluetooth.
-//        connectDevices();
+        connectDevices();
     }
 
     /* For returning to this activity from other activities. */
@@ -545,9 +545,9 @@ public class MainActivity extends AppCompatActivity {
                                 e.printStackTrace();
                             }finally {
                                 mTextView.setText("Error recognizing: " + error);
-                                Log.d(LOG_TAG,"Recognize response is an error.");
-//                            send_wristband(NO_MATCH);
-//                                send_wristband(error + "\n");
+                                Log.d(LOG_TAG,"Recognize response is an error."+error);
+                            send_wristband(NO_MATCH);
+                                send_wristband(error + "\n");
                                 return;
                             }
                         }
@@ -560,14 +560,14 @@ public class MainActivity extends AppCompatActivity {
                             /* If face is recognized */
                             if(confidence >= mThreshold ){
                                 mTextView.setText(mCurrentPhotoPath +"Face is: "+ best_candidate);
-//                            send_wristband(MATCH_FOUND);
-//                            send_wristband(best_candidate+"\n");
+                            send_wristband(MATCH_FOUND);
+                            send_wristband(best_candidate+"\n");
                             }
                             /* If face is not recognized. */
                             else{
                               mTextView.setText("A new face!");
-//                            send_wristband(MATCH_FOUND);
-//                            send_wristband("A new face!" + "\n");
+                            send_wristband(MATCH_FOUND);
+                            send_wristband("A new face!" + "\n");
                             }
                         }
                         /* Only occurs if API returns a previously unseen type of non-error response. */
@@ -575,8 +575,8 @@ public class MainActivity extends AppCompatActivity {
                             e.printStackTrace();
                             Log.d(LOG_TAG,"JSON exception.");
                             mTextView.setText("JSON exception.");
-                            // send_wristband(NO_MATCH);
-                            // send_wristband("JSON error occurred." + "\n");
+                             send_wristband(NO_MATCH);
+                             send_wristband("JSON error occurred." + "\n");
                         }
                     }
                 }, new Response.ErrorListener() {
