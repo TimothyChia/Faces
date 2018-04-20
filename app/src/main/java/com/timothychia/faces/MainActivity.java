@@ -508,7 +508,7 @@ public class MainActivity extends AppCompatActivity {
         String recognize_url = "https://api.kairos.com/recognize";
         final String gallery_name = "Office";
 
-
+        Log.d("time", "start:"+String.valueOf(System.nanoTime()));
 
         // For some reason, the JSONObject.put method has to be wrapped in try/catch before android studio will take it
         JSONObject recognize_param = new JSONObject();
@@ -524,6 +524,10 @@ public class MainActivity extends AppCompatActivity {
                 new Response.Listener() {
                     // online tutorial doesn't use "Object response", but android studio won't recognize it as an override otherwise
                     public void onResponse(Object response) {
+
+                        Log.d("time", "end:"+String.valueOf(System.nanoTime()));
+
+
                         // Print the entire response to the debugging log.
                         Log.d(LOG_TAG, "Response received to Recognize request:" + response.toString());
 
@@ -594,6 +598,7 @@ public class MainActivity extends AppCompatActivity {
                 return headers;
             }
         };
+
 
     // Add the request to the RequestQueue.
         mRequestQueue.add(jReq);
