@@ -8,6 +8,7 @@ import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothSocket;
 import android.content.Intent;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.Environment;
 import android.os.Handler;
@@ -38,6 +39,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.nio.ByteBuffer;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.HashMap;
@@ -49,13 +51,13 @@ import static android.graphics.Bitmap.createScaledBitmap;
 
 public class MainActivity extends AppCompatActivity {
     public static final String EXTRA_MESSAGE = "com.example.myfirstapp.MESSAGE";
-    private static final String LOG_TAG =  MainActivity.class.getSimpleName();
+    private static final String LOG_TAG = "Faces_Main_DT";
     private static final String TAG_WRISTBAND =  "Wristband Tag";
 
     /* Strings used to communicate with the other modules (Android sends)*/
     private final String MATCH_FOUND = "Match Found\n";
     private final String NO_MATCH = "No Match\n";
-    private final String GET_PHOTO = "Get Photo\n";
+    private final String TAKE_PHOTO = "Take Photo\n";
 
     /* Strings used to communicate with the other modules (Android receives)*/
     private final String RECOGNIZE_REQUEST = "Recognize Request"; // no newline because using readline
@@ -117,7 +119,7 @@ public class MainActivity extends AppCompatActivity {
         findViewById(R.id.button_list).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                dispatchTakePictureIntent();
+                recognize();
             }
         });
 
@@ -186,7 +188,7 @@ public class MainActivity extends AppCompatActivity {
     /* Connect the wristband and camera modules, and start their threads and handlers. */
     private void connectDevices(){
         String wristbandName = "HC-05";
-        String cameraName = "Faces Camera";
+        String cameraName = "FACES_CAMERA";
 
 
         /* Get a valid bluetooth adapter. */
@@ -220,20 +222,21 @@ public class MainActivity extends AppCompatActivity {
         else{
             Log.d(LOG_TAG,"No paired devices found!");
         }
+//
+//        /* Start the device connection threads. Override run to launch the device management threads after.*/
+//        if(wristbandDevice != null){
+//            mWristbandConnectThread = new BluetoothConnectThread(wristbandDevice,mUUID){
+//                @Override
+//                public void run() {
+//                    super.run();
+//                    startWristbandThread(getMmSocket());
+//
+//                }
+//            };
+//            mWristbandConnectThread.start();
+//        }
+//        else Log.d(LOG_TAG,"wristBandDevice null! Thread not launched.");
 
-        /* Start the device connection threads. Override run to launch the device management threads after.*/
-        if(wristbandDevice != null){
-            mWristbandConnectThread = new BluetoothConnectThread(wristbandDevice,mUUID){
-                @Override
-                public void run() {
-                    super.run();
-                    startWristbandThread(getMmSocket());
-
-                }
-            };
-            mWristbandConnectThread.start();
-        }
-        else Log.d(LOG_TAG,"wristBandDevice null! Thread not launched.");
         if(cameraDevice != null){
             mCameraConnectThread = new BluetoothConnectThread(cameraDevice,mUUID){
                 @Override
@@ -294,26 +297,35 @@ public class MainActivity extends AppCompatActivity {
             public void run() {
                 String fromWristband; String tmp;
                 BufferedReader in = new BufferedReader(new InputStreamReader(mmInStream),200000);
+                final byte[] imageBytes = new byte[5800]; // needs to be bigger?
+                int numBytes = 0;
 //             Keep listening to the InputStream until an exception occurs.
                 while (true) {
                     try {
                         Log.d(TAG_WRISTBAND, "Attempting to read");
-                        fromWristband = in.readLine();
-                        Log.d(TAG_WRISTBAND, fromWristband);
+//                        fromWristband = in.readLine();
+                        while(numBytes <5){
+                            numBytes = numBytes + mmInStream.read(imageBytes,numBytes,5 - numBytes);
+                            Log.d(TAG_WRISTBAND,"numBytes = " + numBytes);
+                        }
+                        Log.d(TAG_WRISTBAND, "5 bytes read:  "+String.valueOf(imageBytes[0]) + String.valueOf(imageBytes[1]) + String.valueOf(imageBytes[2]) + String.valueOf(imageBytes[3]) +String.valueOf(imageBytes[4])   );
+                        numBytes = 0;
+                        while(numBytes < 4800){
+                            numBytes = numBytes +  mmInStream.read(imageBytes,numBytes,4800 - numBytes);
+                            Log.d(TAG_WRISTBAND,"numBytes = " + numBytes);
+                        }
+                        Log.d(TAG_WRISTBAND, "Received this many bytes: " + numBytes);
 
 
-                        // Have the UI thread respond to whatever the wristband just sent.
-                        if(fromWristband.equals( RECOGNIZE_REQUEST )){
+                        // Have the UI thread respond
                             mHandler.post(new Runnable() {
                                 @Override
                                 public void run() {
                                     // this will run in the main thread
-//                                        testRunnable();
-                                    dispatchTakePictureIntent(); // currently the start of the recognition chain
-
+                                    testCBB(imageBytes);
                                 }
                             });
-                        }
+
                     } catch (IOException e) {
                         Log.d(TAG_WRISTBAND, "Input stream was disconnected", e);
                         break;
@@ -328,7 +340,27 @@ public class MainActivity extends AppCompatActivity {
     }
 
 
+    private void testCBB(byte[] imageBytes){
+//        BitmapFactory.Options options = new BitmapFactory.Options();
+//        options.outHeight = 80;
+//        options.outWidth = 60;
+//        Bitmap bitmap = BitmapFactory.decodeByteArray(imageBytes, 0,4800,options);
 
+        byte[] imageRGBA = new byte [imageBytes.length*4];
+        int i;
+        for(i = 0;i<imageBytes.length;i++){
+            imageRGBA[4*i] = imageBytes[i];
+            imageRGBA[4*i + 1] = imageBytes[i];
+            imageRGBA[4*i + 2] = imageBytes[i];
+            imageRGBA[4*i + 3] = (byte) 0xff;
+        }
+        int   width  = 80;
+        int   height = 60;
+        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        bitmap.copyPixelsFromBuffer(ByteBuffer.wrap(imageRGBA));
+        mImageView.setImageBitmap(bitmap);
+        uploadBitmap(bitmap);
+    }
 
     public void testRunnable(){
         mTextView.setText("Runnable executed!");
@@ -367,10 +399,10 @@ public class MainActivity extends AppCompatActivity {
     /* Uses some camera to get a photo, then makes the API call. */
     private void recognize(){
         /* A version without the camera module. */
-        dispatchTakePictureIntent();
+//        dispatchTakePictureIntent();
 
         /* A version using the camera module. */
-//        send_camera(GET_PHOTO);
+        send_camera(TAKE_PHOTO);
     }
 
 
