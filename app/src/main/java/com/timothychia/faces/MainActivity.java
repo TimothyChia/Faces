@@ -102,7 +102,7 @@ public class MainActivity extends AppCompatActivity {
     String mCurrentPhotoPath;
 
     /* Used to tune the API performance. */
-    private double mThreshold = 0.50;
+    private double mThreshold = 0.60;
 
 
     @Override
@@ -223,20 +223,20 @@ public class MainActivity extends AppCompatActivity {
         else{
             Log.d(LOG_TAG,"No paired devices found!");
         }
-//
-//        /* Start the device connection threads. Override run to launch the device management threads after.*/
-//        if(wristbandDevice != null){
-//            mWristbandConnectThread = new BluetoothConnectThread(wristbandDevice,mUUID){
-//                @Override
-//                public void run() {
-//                    super.run();
-//                    startWristbandThread(getMmSocket());
-//
-//                }
-//            };
-//            mWristbandConnectThread.start();
-//        }
-//        else Log.d(LOG_TAG,"wristBandDevice null! Thread not launched.");
+
+        /* Start the device connection threads. Override run to launch the device management threads after.*/
+        if(wristbandDevice != null){
+            mWristbandConnectThread = new BluetoothConnectThread(wristbandDevice,mUUID){
+                @Override
+                public void run() {
+                    super.run();
+                    startWristbandThread(getMmSocket());
+
+                }
+            };
+            mWristbandConnectThread.start();
+        }
+        else Log.d(LOG_TAG,"wristBandDevice null! Thread not launched.");
 
         if(cameraDevice != null){
             mCameraConnectThread = new BluetoothConnectThread(cameraDevice,mUUID){
@@ -264,9 +264,9 @@ public class MainActivity extends AppCompatActivity {
 //             Keep listening to the InputStream until an exception occurs.
                     while (true) {
                         try {
-                            Log.d(TAG_WRISTBAND, "Attempting to read");
+                            Log.d(LOG_TAG, "Wristband attempting to read");
                             fromWristband = in.readLine();
-                            Log.d(TAG_WRISTBAND, fromWristband);
+                            Log.d(LOG_TAG, fromWristband);
 
                             // Have the UI thread respond to whatever the wristband just sent.
                             if(fromWristband.equals( RECOGNIZE_REQUEST )){
@@ -278,7 +278,7 @@ public class MainActivity extends AppCompatActivity {
                                 });
                             }
                         } catch (IOException e) {
-                            Log.d(TAG_WRISTBAND, "Input stream was disconnected", e);
+                            Log.d(LOG_TAG, "Wristband input stream was disconnected", e);
                             break;
                         }
                     }
@@ -307,17 +307,27 @@ public class MainActivity extends AppCompatActivity {
 //             Keep listening to the InputStream until an exception occurs.
                 while (true) {
                     try {
-                        Log.d(TAG_WRISTBAND, "Attempting to read");
+                        Log.d(LOG_TAG, "Camera attempting to read");
 //                        fromWristband = in.readLine();
 
-                        /* Read *RDY* tag */
-                        while(numBytes <5){
-                            bytesRead = inBuff.read(imageBytes,numBytes,5 - numBytes);
+                        /* Read *RDY* tag 42 82 68 89 42*/
+                        numBytes = 0;
+                        bytesRead = 0;
+                        bytesLeft = inBuff.available(); // next read call is guaranteed to not block if we use this in the call
+                        while(true){
+                            bytesRead = inBuff.read(imageBytes,numBytes,1);
                             if(bytesRead>= 0)
                                 numBytes = numBytes + bytesRead;
-                            Log.d(TAG_WRISTBAND,"numBytes = " + numBytes);
+                            Log.d(LOG_TAG,"Camera numBytes = " + numBytes);
+                            if(numBytes >=5 ){
+                            if(imageBytes[numBytes - 1] == 42 &&
+                                    imageBytes[numBytes - 2] == 89 &&
+                                    imageBytes[numBytes - 3] == 68 &&
+                                    imageBytes[numBytes - 4] == 82 &&
+                                    imageBytes[numBytes - 5] == 42 ) break;}
                         }
-                        Log.d(TAG_WRISTBAND, "5 bytes read:  "+String.valueOf(imageBytes[0]) + String.valueOf(imageBytes[1]) + String.valueOf(imageBytes[2]) + String.valueOf(imageBytes[3]) +String.valueOf(imageBytes[4])   );
+                        Log.d(LOG_TAG, "Tag found:  "+String.valueOf(imageBytes[0]) + String.valueOf(imageBytes[1]) + String.valueOf(imageBytes[2]) + String.valueOf(imageBytes[3]) +String.valueOf(imageBytes[4])   );
+
                         /* Read image */
                         numBytes = 0;
                         bytesRead = 0;
@@ -325,9 +335,9 @@ public class MainActivity extends AppCompatActivity {
                             bytesRead = inBuff.read(imageBytes,numBytes,4800 - numBytes);
                             if(bytesRead>= 0)
                                 numBytes = numBytes + bytesRead;
-                            Log.d(TAG_WRISTBAND,"numBytes = " + numBytes);
+//                            Log.d(LOG_TAG,"Camera numBytes = " + numBytes);
                         }
-                        Log.d(TAG_WRISTBAND, "Received this many bytes: " + numBytes);
+                        Log.d(LOG_TAG, "Received this many bytes: " + numBytes);
                         /* Read the garbage. I don't know why, but this section does stop garbage from showing up instead of the *RDY tag. Even though it never finds any garbage. */
                         bytesRead = 0;
                         numBytes = 0;
@@ -336,7 +346,7 @@ public class MainActivity extends AppCompatActivity {
                             bytesRead = inBuff.read(garbageBytes,numBytes, bytesRead);
                             if(bytesRead>= 0)
                                 numBytes = numBytes + bytesRead;
-                            Log.d(TAG_WRISTBAND,"garbageBytes = " + numBytes);
+                            Log.d(LOG_TAG,"Camera garbageBytes = " + numBytes);
                             bytesLeft = inBuff.available();
                         }
 
@@ -352,7 +362,7 @@ public class MainActivity extends AppCompatActivity {
                             });
 
                     } catch (IOException e) {
-                        Log.d(TAG_WRISTBAND, "Input stream was disconnected", e);
+                        Log.d(LOG_TAG, "Camera input stream was disconnected", e);
                         break;
                     }
                 }
