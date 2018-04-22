@@ -34,6 +34,7 @@ import com.android.volley.toolbox.JsonObjectRequest;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -296,25 +297,49 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void run() {
                 String fromWristband; String tmp;
-                BufferedReader in = new BufferedReader(new InputStreamReader(mmInStream),200000);
+//                BufferedReader in = new BufferedReader(new InputStreamReader(mmInStream),200000);
+                BufferedInputStream inBuff = new BufferedInputStream(mmInStream,20000);
                 final byte[] imageBytes = new byte[5800]; // needs to be bigger?
+                byte[] garbageBytes = new byte[100];
                 int numBytes = 0;
+                int bytesRead = 0;
+                int bytesLeft = 0;
 //             Keep listening to the InputStream until an exception occurs.
                 while (true) {
                     try {
                         Log.d(TAG_WRISTBAND, "Attempting to read");
 //                        fromWristband = in.readLine();
+
+                        /* Read *RDY* tag */
                         while(numBytes <5){
-                            numBytes = numBytes + mmInStream.read(imageBytes,numBytes,5 - numBytes);
+                            bytesRead = inBuff.read(imageBytes,numBytes,5 - numBytes);
+                            if(bytesRead>= 0)
+                                numBytes = numBytes + bytesRead;
                             Log.d(TAG_WRISTBAND,"numBytes = " + numBytes);
                         }
                         Log.d(TAG_WRISTBAND, "5 bytes read:  "+String.valueOf(imageBytes[0]) + String.valueOf(imageBytes[1]) + String.valueOf(imageBytes[2]) + String.valueOf(imageBytes[3]) +String.valueOf(imageBytes[4])   );
+                        /* Read image */
                         numBytes = 0;
+                        bytesRead = 0;
                         while(numBytes < 4800){
-                            numBytes = numBytes +  mmInStream.read(imageBytes,numBytes,4800 - numBytes);
+                            bytesRead = inBuff.read(imageBytes,numBytes,4800 - numBytes);
+                            if(bytesRead>= 0)
+                                numBytes = numBytes + bytesRead;
                             Log.d(TAG_WRISTBAND,"numBytes = " + numBytes);
                         }
                         Log.d(TAG_WRISTBAND, "Received this many bytes: " + numBytes);
+                        /* Read the garbage. I don't know why, but this section does stop garbage from showing up instead of the *RDY tag. Even though it never finds any garbage. */
+                        bytesRead = 0;
+                        numBytes = 0;
+                        bytesLeft = inBuff.available(); // next read call is guaranteed to not block if we use this in the call
+                        while(bytesLeft > 0){
+                            bytesRead = inBuff.read(garbageBytes,numBytes, bytesRead);
+                            if(bytesRead>= 0)
+                                numBytes = numBytes + bytesRead;
+                            Log.d(TAG_WRISTBAND,"garbageBytes = " + numBytes);
+                            bytesLeft = inBuff.available();
+                        }
+
 
 
                         // Have the UI thread respond
@@ -341,11 +366,6 @@ public class MainActivity extends AppCompatActivity {
 
 
     private void testCBB(byte[] imageBytes){
-//        BitmapFactory.Options options = new BitmapFactory.Options();
-//        options.outHeight = 80;
-//        options.outWidth = 60;
-//        Bitmap bitmap = BitmapFactory.decodeByteArray(imageBytes, 0,4800,options);
-
         byte[] imageRGBA = new byte [imageBytes.length*4];
         int i;
         for(i = 0;i<imageBytes.length;i++){
@@ -591,7 +611,7 @@ public class MainActivity extends AppCompatActivity {
                             String best_candidate =  transaction.getString("subject_id");
                             /* If face is recognized */
                             if(confidence >= mThreshold ){
-                                mTextView.setText(mCurrentPhotoPath +"Face is: "+ best_candidate);
+                                mTextView.setText( "Face is: "+ best_candidate + " with confidence: " + confidence);
                             send_wristband(MATCH_FOUND);
                             send_wristband(best_candidate+"\n");
                             }
