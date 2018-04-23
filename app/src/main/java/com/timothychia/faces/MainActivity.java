@@ -117,7 +117,7 @@ public class MainActivity extends AppCompatActivity {
         mEditText_newID = (EditText) findViewById(R.id.editText_newID);
 
         //adding click listener to button. Triggers the built in camera activity.
-        findViewById(R.id.button_list).setOnClickListener(new View.OnClickListener() {
+        findViewById(R.id.button_recognize).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
                 recognize();
@@ -147,7 +147,13 @@ public class MainActivity extends AppCompatActivity {
         });
 
 
-
+        //adding click listener to button. Launches the database activity.
+        findViewById(R.id.button_takePhotoAndroid).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                takePhotoAndroid();
+            }
+        });
         // for now, using noPhoto as a way to maintain information about whether an image exists to be recognized or enrolled
         mCurrentPhotoPath = noPhoto;
 
@@ -435,6 +441,9 @@ public class MainActivity extends AppCompatActivity {
         send_camera(TAKE_PHOTO);
     }
 
+    private void takePhotoAndroid(){
+        dispatchTakePictureIntent();
+    }
 
 
     /* Returns the bitmap stored at the file located by mCurrentPhotoPath
@@ -587,6 +596,18 @@ public class MainActivity extends AppCompatActivity {
                     // online tutorial doesn't use "Object response", but android studio won't recognize it as an override otherwise
                     public void onResponse(Object response) {
 
+                        /* Variables for the JSON parsing.*/
+                        int numFaces,itx_faces;
+                        String[] status = new String[10]; // arbitrarily limiting to 10 faces in one photo for now
+                        double[] confidence = new double[10];
+                        double[] topLeftX = new double[10];
+                        String[] best_candidate = new String[10]; // arbitrarily limiting to 10 faces in one photo for now
+                        String parsed_response;
+                        boolean atLeastOneRecognized;
+
+
+
+
                         Log.d("time", "end:"+String.valueOf(System.nanoTime()));
 
 
@@ -615,22 +636,37 @@ public class MainActivity extends AppCompatActivity {
                         }
                         /* Since no error occurred, attempt everything else in a try/catch. */
                         try {
-                            transaction = response_json.getJSONArray("images").getJSONObject(0).getJSONObject("transaction");
-                            String status = transaction.getString("status");
-                            double confidence = Double.parseDouble((transaction.getString("confidence")));
-                            String best_candidate =  transaction.getString("subject_id");
-                            /* If face is recognized */
-                            if(confidence >= mThreshold ){
-                                mTextView.setText( "Face is: "+ best_candidate + " with confidence: " + confidence);
-                            send_wristband(MATCH_FOUND);
-                            send_wristband(best_candidate+"\n");
+                            numFaces = response_json.getJSONArray("images").length();
+                            parsed_response = "";
+                            atLeastOneRecognized = false;
+
+                            for( itx_faces = 0; itx_faces < numFaces;itx_faces++ ){
+                                transaction = response_json.getJSONArray("images").getJSONObject(itx_faces).getJSONObject("transaction");
+                                status[itx_faces] = transaction.getString("status");
+                                confidence[itx_faces] = Double.parseDouble((transaction.getString("confidence")));
+                                topLeftX[itx_faces] = Double.parseDouble((transaction.getString("topLeftX")));
+                                best_candidate[itx_faces] =  transaction.getString("subject_id");
+
+                                /* If face is recognized */
+                                if(confidence[itx_faces] >= mThreshold ){
+//                                    mTextView.setText( "Face is: "+ best_candidate + " with confidence: " + confidence);
+//                                    send_wristband(MATCH_FOUND);
+//                                    send_wristband(best_candidate+"\n");
+                                    parsed_response += " Face at " + topLeftX[itx_faces] + " is: "+ best_candidate[itx_faces] + " with confidence: " + confidence[itx_faces];
+                                    atLeastOneRecognized = true;
+                                }
+                                /* If face is not recognized. */
+                                else{
+                                    parsed_response += " Face at " + topLeftX[itx_faces] + " is a new face! Confidence below threshold. Confidence: " + confidence[itx_faces];
+
+                                }
                             }
-                            /* If face is not recognized. */
-                            else{
-                              mTextView.setText("A new face!");
-                            send_wristband(MATCH_FOUND);
-                            send_wristband("A new face!" + "\n");
-                            }
+                            mTextView.setText(parsed_response);
+                            if(atLeastOneRecognized) send_wristband(MATCH_FOUND);
+                            else send_wristband(NO_MATCH);
+
+                            send_wristband(parsed_response);
+
                         }
                         /* Only occurs if API returns a previously unseen type of non-error response. */
                         catch (JSONException e) {
